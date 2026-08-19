@@ -1,0 +1,31 @@
+{
+  "title": "Shine Jobs Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "searchQuery": {
+      "title": "Search Query",
+      "type": "string",
+      "description": "Job search keywords (e.g., 'data analyst', 'software engineer', 'marketing')",
+      "default": "jobs",
+      "editor": "textfield"
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "description": "City or location to search in (e.g., 'Mumbai', 'Bangalore', 'Delhi'). Leave empty for all locations.",
+      "default": "",
+      "editor": "textfield"
+    },
+    "maxResults": {
+      "title": "Maximum Results",
+      "type": "integer",
+      "description": "Maximum number of job listings to scrape",
+      "default": 100,
+      "minimum": 1,
+      "maximum": 10000,
+      "editor": "number"
+    }
+  },
+  "required": []
+}

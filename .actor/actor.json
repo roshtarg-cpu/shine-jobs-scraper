@@ -1,0 +1,63 @@
+{
+  "actorSpecification": 1,
+  "name": "shine-jobs-scraper",
+  "title": "Shine.com Jobs Scraper — India's #2 Job Portal",
+  "description": "Scrape job listings from Shine.com, India's second-largest job portal. Extract job titles, companies, locations, salaries, experience requirements, and job URLs. Perfect for recruiters, job aggregators, and market research. Works with Claude, ChatGPT, and AI agents via Apify MCP.",
+  "version": "0.1",
+  "buildTag": "latest",
+  "dockerfile": "./Dockerfile",
+  "input": "./input_schema.json",
+  "output": {
+    "actorOutputSchemaVersion": 1,
+    "properties": {
+      "jobId": {
+        "type": "string",
+        "title": "Job ID",
+        "description": "Unique job identifier",
+        "template": "{{{jobId}}}"
+      },
+      "title": {
+        "type": "string",
+        "title": "Job Title",
+        "description": "Job position title",
+        "template": "{{{title}}}"
+      },
+      "company": {
+        "type": "string",
+        "title": "Company Name",
+        "description": "Hiring company name",
+        "template": "{{{company}}}"
+      },
+      "location": {
+        "type": "string",
+        "title": "Location",
+        "description": "Job location",
+        "template": "{{{location}}}"
+      },
+      "experience": {
+        "type": "string",
+        "title": "Experience Required",
+        "description": "Required experience level",
+        "template": "{{{experience}}}"
+      },
+      "salary": {
+        "type": "string",
+        "title": "Salary Range",
+        "description": "Salary or compensation range",
+        "template": "{{{salary}}}"
+      },
+      "url": {
+        "type": "string",
+        "title": "Job URL",
+        "description": "Direct link to job posting",
+        "template": "{{{url}}}"
+      },
+      "scrapedAt": {
+        "type": "string",
+        "title": "Scraped At",
+        "description": "Timestamp when data was scraped",
+        "template": "{{{scrapedAt}}}"
+      }
+    }
+  }
+}
