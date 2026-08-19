@@ -3,10 +3,9 @@ import asyncio
 import re
 from datetime import datetime, timezone
 from typing import Optional
-from urllib.parse import urlencode, urlparse, parse_qs
 
 from apify import Actor
-from playwright.async_api import async_playwright, Page, Browser
+from playwright.async_api import async_playwright, Page
 
 
 async def extract_job_data(page: Page) -> list:
@@ -14,48 +13,55 @@ async def extract_job_data(page: Page) -> list:
     jobs = []
     
     try:
-        # Wait for job cards to load
-        await page.wait_for_selector('.job_card, .jobCard, [data-job-id], .job-listing', timeout=15000)
+        # Wait for job cards to load - using actual Shine.com classes
+        await page.wait_for_selector('.jdbigCard, div[class*="bigCard"]', timeout=20000)
         
         # Extract job data from cards
-        job_cards = await page.query_selector_all('.job_card, .jobCard, [data-job-id], .job-listing')
+        job_cards = await page.query_selector_all('.jdbigCard, div[class*="bigCard"]')
         
-        for card in job_cards:
+        Actor.log.info(f'Found {len(job_cards)} job cards')
+        
+        for idx, card in enumerate(job_cards):
             try:
-                # Extract title
-                title_elem = await card.query_selector('h2, h3, .job_title, .jobTitle, [class*="title"]')
+                # Extract title - using h3 itemprop="name"
+                title_elem = await card.query_selector('h3[itemprop="name"], h3[class*="Heading"]')
                 title = await title_elem.inner_text() if title_elem else None
                 
-                # Extract company
-                company_elem = await card.query_selector('.company, .companyName, [class*="company"]')
+                # Extract company name - using span with "Company" in class
+                company_elem = await card.query_selector('span[class*="CompanyName"], span[class*="bigCardTopTitleName"]')
                 company = await company_elem.inner_text() if company_elem else None
                 
-                # Extract location
-                location_elem = await card.query_selector('.location, .jobLocation, [class*="location"]')
+                # Extract location - div with "Location" in class
+                location_elem = await card.query_selector('div[class*="Location"], span[class*="Location"]')
                 location = await location_elem.inner_text() if location_elem else None
                 
-                # Extract experience
-                exp_elem = await card.query_selector('.experience, .exp, [class*="experience"]')
+                # Extract experience - div with "Experience" in class
+                exp_elem = await card.query_selector('div[class*="Experience"] span, span[class*="Exp"]')
                 experience = await exp_elem.inner_text() if exp_elem else None
                 
-                # Extract salary
-                salary_elem = await card.query_selector('.salary, .ctc, [class*="salary"]')
+                # Extract salary - look for "Salary" or "CTC" in class
+                salary_elem = await card.query_selector('div[class*="Salary"], span[class*="Salary"], div[class*="ctc"]')
                 salary = await salary_elem.inner_text() if salary_elem else None
                 
-                # Extract job URL
-                link_elem = await card.query_selector('a[href*="/job/"]')
-                job_url = await link_elem.get_attribute('href') if link_elem else None
+                # Extract job URL - meta itemprop="url" or anchor href
+                url_elem = await card.query_selector('meta[itemprop="url"]')
+                if url_elem:
+                    job_url = await url_elem.get_attribute('content')
+                else:
+                    link_elem = await card.query_selector('a[href*="/jobs/"]')
+                    job_url = await link_elem.get_attribute('href') if link_elem else None
+                
                 if job_url and not job_url.startswith('http'):
                     job_url = f'https://www.shine.com{job_url}'
                 
-                # Extract job ID from URL or data attribute
+                # Extract job ID from URL
                 job_id = None
                 if job_url:
-                    match = re.search(r'/job/([^/]+)', job_url)
+                    match = re.search(r'/jobs/[^/]+/[^/]+/(\d+)', job_url)
                     if match:
                         job_id = match.group(1)
                 
-                if title and company:  # Only include if we have minimal data
+                if title:  # Only include if we have at least a title
                     jobs.append({
                         'jobId': job_id,
                         'title': title.strip() if title else None,
@@ -66,9 +72,10 @@ async def extract_job_data(page: Page) -> list:
                         'url': job_url,
                         'scrapedAt': datetime.now(timezone.utc).isoformat()
                     })
+                    Actor.log.debug(f'Extracted job #{idx+1}: {title}')
                     
             except Exception as e:
-                Actor.log.debug(f'Error extracting job card: {e}')
+                Actor.log.debug(f'Error extracting job card #{idx+1}: {e}')
                 continue
                 
     except Exception as e:
@@ -80,24 +87,31 @@ async def extract_job_data(page: Page) -> list:
 async def has_next_page(page: Page) -> bool:
     """Check if there's a next page button."""
     try:
-        next_button = await page.query_selector('a.next, .pagination a[aria-label="Next"], .pagination .next:not(.disabled)')
+        # Check for "next" link in pagination
+        next_button = await page.query_selector('link[rel="next"], a[aria-label*="Next"], .pagination a:has-text("Next")')
         return next_button is not None
     except:
         return False
 
 
-async def click_next_page(page: Page) -> bool:
-    """Click the next page button and wait for navigation."""
+async def go_to_next_page(page: Page, current_page_num: int) -> bool:
+    """Navigate to next page by URL manipulation."""
     try:
-        next_button = await page.query_selector('a.next, .pagination a[aria-label="Next"], .pagination .next:not(.disabled)')
-        if next_button:
-            await next_button.click()
-            await page.wait_for_load_state('networkidle', timeout=15000)
-            await asyncio.sleep(2)  # Extra delay for dynamic content
-            return True
+        current_url = page.url
+        # Shine.com uses -2, -3, etc. for page numbers
+        if f'-{current_page_num}' in current_url:
+            next_url = current_url.replace(f'-{current_page_num}', f'-{current_page_num + 1}')
+        else:
+            # First page doesn't have number, add -2 for second page
+            next_url = current_url.rstrip('/') + '-2'
+        
+        Actor.log.info(f'Navigating to: {next_url}')
+        await page.goto(next_url, wait_until='networkidle', timeout=30000)
+        await asyncio.sleep(3)
+        return True
     except Exception as e:
-        Actor.log.debug(f'Error clicking next page: {e}')
-    return False
+        Actor.log.debug(f'Error navigating to next page: {e}')
+        return False
 
 
 async def main() -> None:
@@ -143,7 +157,7 @@ async def main() -> None:
                 
                 # Navigate to search page
                 await page.goto(start_url, wait_until='networkidle', timeout=30000)
-                await asyncio.sleep(3)  # Wait for JS to render
+                await asyncio.sleep(4)  # Wait for JS to render
                 
                 while total_scraped < max_results:
                     Actor.log.info(f'Scraping page {page_num}...')
@@ -172,15 +186,11 @@ async def main() -> None:
                         break
                     
                     # Try to go to next page
-                    if await has_next_page(page):
-                        success = await click_next_page(page)
-                        if not success:
-                            Actor.log.info('Could not navigate to next page')
-                            break
-                        page_num += 1
-                    else:
-                        Actor.log.info('No more pages available')
+                    success = await go_to_next_page(page, page_num)
+                    if not success:
+                        Actor.log.info('Could not navigate to next page')
                         break
+                    page_num += 1
                         
             finally:
                 await browser.close()
